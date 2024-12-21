@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, getCurrentInstance, type Ref, ref } from "vue";
+import { computed, onBeforeMount, type Ref, ref } from "vue";
 
 import Button from 'primevue/button';
 import Card from 'primevue/card';
@@ -11,17 +11,137 @@ import { Form, type FormSubmitEvent } from '@primevue/forms';
 
 import 'primeicons/primeicons.css'
 
-import init, { Document, edit_headers, add_transaction, edit_transaction, parse_document, recompute_headers, remove_transaction, write_xml } from "../external/sepa-xml-editor-core/sepa_xml_editor_core";
+import init, { parse_document, write_xml } from "../external/sepa-xml-editor-core/sepa_xml_editor_core";
+import currency from "currency.js";
+import { zodResolver } from "@primevue/forms/resolvers/zod";
+import { z } from 'zod';
 
-init()
+import { useToast } from 'primevue/usetoast';
+import Toast from 'primevue/toast';
 
-const file: Ref<Document | null, Document | null> = ref(null);
+const toast = useToast();
+
+type SepaDocument = {
+    "@xmlns": string,
+    "@xmlns:xsi": string
+    CstmrCdtTrfInitn: CustomerCreditTransferInitiation
+}
+
+
+type CustomerCreditTransferInitiation = {
+    GrpHdr: GroupHeader,
+    PmtInf: PaymentInformation,
+}
+
+type GroupHeader = {
+    MsgId: string,
+    CreDtTm: string,
+    NbOfTxs: number,
+    CtrlSum: string,
+    InitgPty: InitiatingParty
+}
+
+type InitiatingParty = {
+    Nm: string
+}
+
+type PaymentInformation = {
+    PmtInfId: string,
+    PmtMtd: "TRF",
+    NbOfTxs: number,
+    CtrlSum: string,
+    PmtTpInf: PaymentTypeInformation,
+    ReqdExctnDt: string,
+    Dbtr: Debtor,
+    DbtrAcct: DebtorAccount,
+    DbtrAgt: DebtorAgent,
+    CdtTrfTxInf: CreditorTransferTransactionInformation[]
+}
+
+type PaymentTypeInformation = {
+    CtgyPurp: CategoryPurposeCode
+}
+
+type CategoryPurposeCode = {
+    Cd: string
+}
+
+type Debtor = {
+    Nm: string,
+}
+
+type DebtorAccount = {
+    Id: DebtorAccountId
+}
+
+type DebtorAccountId = {
+    IBAN: string
+}
+
+type DebtorAgent = {
+    FinInstnId: FinancialInstitutionId
+}
+
+type FinancialInstitutionId = {
+    BIC: string
+}
+
+type CreditorTransferTransactionInformation = {
+    PmtId: PaymentIdentification,
+    Amt: Amount,
+    CdtrAgt: CreditorAgent,
+    Cdtr: Creditor,
+    CdtrAcct: CreditorAccount
+}
+
+type PaymentIdentification = {
+    EndToEndId: "NOTPROVIDED"
+}
+
+type Amount = {
+    InstdAmt: InstructedAmount
+}
+
+type InstructedAmount = {
+    "@Ccy": "EUR",
+    $value: string
+}
+
+
+type Creditor = {
+    Nm: string
+}
+
+type CreditorAgent = {
+    FinInstnId: FinancialInstitutionId
+}
+
+type CreditorAccount = {
+    Id: CreditorAccountId
+}
+
+type CreditorAccountId = {
+    IBAN: string
+}
+
+
+onBeforeMount(() => {
+    init()
+});
+
+const file: Ref<SepaDocument | null, SepaDocument | null> = ref(null);
 const transactionToEdit: Ref<number | null, number | null> = ref(null);
 const addModalVisible = ref(false);
 const editModalVisible = ref(false);
 const editHeaderModalVisible = ref(false);
 
-const header: Ref<{ id: string, creation_date: string, number_of_transactions: number, control_sum: string, initiating_party_name: string } | undefined, { id: string, creation_date: string, number_of_transactions: number, control_sum: string, initiating_party_name: string } | undefined> = ref(undefined);
+const initialHeaderValues = computed(() => {
+    return {
+        initiating_party_name: file.value?.CstmrCdtTrfInitn.GrpHdr.InitgPty.Nm,
+        id: file.value?.CstmrCdtTrfInitn.GrpHdr.MsgId,
+        creation_date: file.value?.CstmrCdtTrfInitn.GrpHdr.CreDtTm
+    };
+});
 
 function clearFile() {
     file.value = null;
@@ -31,8 +151,6 @@ function saveFile() {
     if (file.value === null) {
         throw new Error("");
     }
-
-    // file.value.customer_credit_tranfer_initiation.header.id = "so-para-testar";
 
     const fileContent = write_xml(file.value);
 
@@ -58,6 +176,8 @@ async function onUpload(event: FileUploadUploaderEvent) {
     }
 
     file.value = parse_document(await uploadedFile.text())
+
+    console.log(file.value)
     recomputeHeaders()
 }
 
@@ -66,39 +186,22 @@ const initialValues = computed(() => {
         return {};
     }
 
-    const transaction = file.value?.customer_credit_transfer_initiation.payment_information.transactions[transactionToEdit.value];
+    const transaction = file.value?.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf[transactionToEdit.value];
 
     return {
-        "name": transaction?.creditor.name,
-        "iban": transaction?.creditor_account.id.iban,
-        "bic": transaction?.creditor_agent.financial_institution_id.bic,
-        "amount": transaction?.amount.instructed_amount.value,
+        "name": transaction?.Cdtr.Nm,
+        "iban": transaction?.CdtrAcct.Id.IBAN,
+        "bic": transaction?.CdtrAgt.FinInstnId.BIC,
+        "amount": transaction?.Amt.InstdAmt.$value,
     };
 });
 
-const initialHeaderValues = computed(() => {
-    if (file.value === null) {
-        return {};
+function editTransaction(event: FormSubmitEvent) {
+    if (!event.valid) {
+        toast.add({ severity: "error", summary: 'Foram detetados erros na submissão. Por favor corrija e tente novamente.', life: 5000 });
+        return;
     }
 
-    const header = file.value?.customer_credit_transfer_initiation.header;
-
-    return {
-        "id": header.id,
-        "creation_date": header.creation_date,
-        "initiating_party_name": header.initiating_party.name,
-    };
-});
-
-const transactions = computed(() => {
-    if (file.value === null) {
-        return [];
-    }
-
-    return file.value.customer_credit_transfer_initiation.payment_information.transactions;
-})
-
-function onFormSubmit(event: FormSubmitEvent) {
     const name = event.states.name.value
     const iban = event.states.iban.value
     const bic = event.states.bic.value
@@ -108,14 +211,25 @@ function onFormSubmit(event: FormSubmitEvent) {
         throw new Error("this shouldn't happen");
     }
 
-    edit_transaction(file.value, transactionToEdit.value, name, iban, bic, amount);
+    file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf[transactionToEdit.value].Cdtr.Nm = name
+    file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf[transactionToEdit.value].CdtrAcct.Id.IBAN = iban
+    file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf[transactionToEdit.value].CdtrAgt.FinInstnId.BIC = bic
+    file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf[transactionToEdit.value].Amt.InstdAmt.$value = amount
+
     recomputeHeaders();
 
     editModalVisible.value = false;
     transactionToEdit.value = null;
+
+    toast.add({ severity: "success", summary: 'Alterações efetuadas com sucesso!', life: 5000 });
 }
 
 function addTransaction(event: FormSubmitEvent) {
+    if (!event.valid) {
+        toast.add({ severity: "error", summary: 'Foram detetados erros na submissão. Por favor corrija e tente novamente.', life: 5000 });
+        return;
+    }
+
     const name = event.states.name.value
     const iban = event.states.iban.value
     const bic = event.states.bic.value
@@ -125,22 +239,40 @@ function addTransaction(event: FormSubmitEvent) {
         throw new Error("this shouldn't happen");
     }
 
-    add_transaction(file.value, name, iban, bic, amount);
+    const transaction: CreditorTransferTransactionInformation = {
+        PmtId: { EndToEndId: "NOTPROVIDED" },
+        Cdtr: { Nm: name },
+        CdtrAcct: { Id: { IBAN: iban } },
+        CdtrAgt: { FinInstnId: { BIC: bic } },
+        Amt: { InstdAmt: { "@Ccy": "EUR", $value: amount } },
+    }
+
+    file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf.push(transaction);
+
     recomputeHeaders();
 
     addModalVisible.value = false;
+
+    toast.add({ severity: "success", summary: 'Transação adicionada com sucesso!', life: 5000 });
 }
 
 function editHeader(event: FormSubmitEvent) {
     const id = event.states.id.value
-    const creation_date = event.states.creation_date.value
+    const creation_date: string = event.states.creation_date.value
     const initiating_party_name = event.states.initiating_party_name.value
 
     if (file.value === null) {
         throw new Error("this shouldn't happen");
     }
 
-    edit_headers(file.value, id, creation_date, initiating_party_name);
+    file.value.CstmrCdtTrfInitn.GrpHdr.MsgId = id;
+    file.value.CstmrCdtTrfInitn.GrpHdr.CreDtTm = creation_date;
+    file.value.CstmrCdtTrfInitn.GrpHdr.InitgPty.Nm = initiating_party_name;
+
+    file.value.CstmrCdtTrfInitn.PmtInf.PmtInfId = id;
+    file.value.CstmrCdtTrfInitn.PmtInf.ReqdExctnDt = creation_date.slice(0, 10);
+    file.value.CstmrCdtTrfInitn.PmtInf.Dbtr.Nm = initiating_party_name;
+
     recomputeHeaders();
 
     editHeaderModalVisible.value = false;
@@ -151,15 +283,9 @@ function removeTransaction(i: number): void {
         throw new Error("this shouldn't happen");
     }
 
-    remove_transaction(file.value, i);
-    recomputeHeaders();
-    // const instance = getCurrentInstance();
-    // instance?.proxy?.$forceUpdate();
+    file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf.splice(i, 1);
 
-    // this is an hack to force refresh of the list
-    editModalVisible.value = true;
-    editModalVisible.value = false;
-    console.log("removed")
+    recomputeHeaders();
 }
 
 function recomputeHeaders() {
@@ -167,14 +293,33 @@ function recomputeHeaders() {
         throw new Error("this shouldn't happen");
     }
 
-    recompute_headers(file.value);
+    const numberOfTransactions = file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf.length;
 
-    header.value = { id: file.value.customer_credit_transfer_initiation.header.id, creation_date: file.value.customer_credit_transfer_initiation.header.creation_date, number_of_transactions: file.value.customer_credit_transfer_initiation.header.number_of_transactions, control_sum: file.value.customer_credit_transfer_initiation.header.control_sum, initiating_party_name: file.value.customer_credit_transfer_initiation.header.initiating_party.name }
+    file.value.CstmrCdtTrfInitn.GrpHdr.NbOfTxs = numberOfTransactions;
+    file.value.CstmrCdtTrfInitn.PmtInf.NbOfTxs = numberOfTransactions;
+
+    const controlSum = file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf.reduce((acc, transaction) => {
+        return acc.add(transaction.Amt.InstdAmt.$value)
+    }, currency(0, { separator: "", decimal: ".", symbol: "€", precision: 2 })).toString();
+
+    file.value.CstmrCdtTrfInitn.GrpHdr.CtrlSum = controlSum;
+    file.value.CstmrCdtTrfInitn.PmtInf.CtrlSum = controlSum;
 }
+
+const transactionResolver = zodResolver(z.object(
+    {
+        name: z.string({ required_error: "Por favor introduza um nome." }).min(1, "Por favor introduza um nome."),
+        iban: z.string({ required_error: "Por favor introduza o IBAN." }).min(1, "Por favor introduza o IBAN."),
+        bic: z.string({ required_error: "Por favor introduza o BIC." }).min(1, "Por favor introduza o BIC."),
+        amount: z.string({ required_error: "Por favor introduza uma quantia." }).regex(/^\d+\.\d{2}$/,
+            "A quantia deve ser indicada usando o ponto como separador decimal, contendo sempre duas casas decimais. Por exemplo, 1235.23 e 85.00 são considerados valores válidos."),
+    }
+))
 </script>
 
 <template>
     <main>
+        <Toast />
         <div class="flex justify-between items-baseline">
             <h1 class="font-bold text-lg">Editor de Ficheiros SEPA XML</h1>
 
@@ -191,34 +336,33 @@ function recomputeHeaders() {
         </div>
 
         <div v-if="file !== null">
-            <div v-if="header !== null">
-                <Card class="mb-4 mt-8">
-                    <template #content>
-                        <h2 class="font-bold text-lg">Resumo</h2>
-                        <div>Ordenante: {{ header?.initiating_party_name }}</div>
-                        <div>Identificação do pedido: {{ header?.id }}</div>
-                        <div>Data de criação: {{ header ? new Date(header?.creation_date).toLocaleString() : null }}
-                        </div>
-                        <div>{{ header?.number_of_transactions }} transações</div>
-                        <div>{{ header?.control_sum }}€ no total</div>
+            <Card class="mb-4 mt-8">
+                <template #content>
+                    <h2 class="font-bold text-lg">Resumo</h2>
+                    <div>Ordenante: {{ file?.CstmrCdtTrfInitn.GrpHdr.InitgPty.Nm }}</div>
+                    <div>Identificação do pedido: {{ file?.CstmrCdtTrfInitn.GrpHdr.MsgId }}</div>
+                    <div>Data de criação: {{ file?.CstmrCdtTrfInitn.GrpHdr ? new
+                        Date(file?.CstmrCdtTrfInitn.GrpHdr.CreDtTm).toLocaleString() : null }}
+                    </div>
+                    <div>{{ file?.CstmrCdtTrfInitn.GrpHdr.NbOfTxs }} transações</div>
+                    <div>{{ file?.CstmrCdtTrfInitn.GrpHdr.CtrlSum }}€ no total</div>
 
-                        <Button class="mt-2" @click="editHeaderModalVisible = true">
-                            <i class="pi pi-file-edit" style="font-size: 0.75rem"></i>Editar
-                        </Button>
-                    </template>
-                </Card>
-            </div>
+                    <Button class="mt-2" @click="editHeaderModalVisible = true">
+                        <i class="pi pi-file-edit" style="font-size: 0.75rem"></i>Editar
+                    </Button>
+                </template>
+            </Card>
 
-            <Card v-for="(transaction, i) in file.customer_credit_transfer_initiation.payment_information.transactions"
-                :key="transaction.creditor_account.id.iban" class="my-4">
+            <Card v-for="(transaction, i) in file.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf"
+                :key="transaction.CdtrAcct.Id.IBAN" class="my-4">
                 <template #content>
                     <div class="flex justify-between text-lg">
-                        <div>{{ transaction.creditor.name }}</div>
-                        <div>{{ transaction.amount.instructed_amount.value }}€</div>
+                        <div>{{ transaction.Cdtr.Nm }}</div>
+                        <div>{{ transaction.Amt.InstdAmt.$value }}€</div>
                     </div>
                     <div class="flex justify-between text-sm">
-                        <div>{{ transaction.creditor_account.id.iban }}</div>
-                        <div>{{ transaction.creditor_agent.financial_institution_id.bic }}</div>
+                        <div>{{ transaction.CdtrAcct.Id.IBAN }}</div>
+                        <div>{{ transaction.CdtrAgt.FinInstnId.BIC }}</div>
                     </div>
 
                     <div class="flex gap-4 mt-2 justify-end">
@@ -237,44 +381,82 @@ function recomputeHeaders() {
             </Button>
 
             <Dialog v-model:visible="addModalVisible" modal header="Adicionar transacção" :style="{ width: '30rem' }">
-                <Form v-slot="$form" @submit="addTransaction">
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="name" class="font-semibold w-24">Nome</label>
-                        <InputText id="name" name="name" class="flex-auto" autocomplete="off" />
+                <Form v-slot="$form" @submit="addTransaction" :resolver="transactionResolver">
+                    <div class="mb-8">
+                        <div class="flex items-center gap-4">
+                            <label for="name" class="font-semibold w-24">Nome</label>
+                            <InputText id="name" name="name" class="flex-auto" autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.name?.invalid" severity="error" size="small" variant="simple">{{
+                            $form.name.error?.message }}</Message>
                     </div>
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="iban" class="font-semibold w-24">IBAN</label>
-                        <InputText id="iban" name="iban" class="flex-auto" autocomplete="off" />
+
+                    <div class="mb-8">
+                        <div class="flex items-center gap-4">
+                            <label for="iban" class="font-semibold w-24">IBAN</label>
+                            <InputText id="iban" name="iban" class="flex-auto" autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.iban?.invalid" severity="error" size="small" variant="simple">{{
+                            $form.iban.error?.message }}</Message>
                     </div>
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="bic" class="font-semibold w-24">BIC</label>
-                        <InputText id="bic" name="bic" class="flex-auto" autocomplete="off" />
+
+                    <div class="mb-8">
+                        <div class="flex items-center gap-4">
+                            <label for="bic" class="font-semibold w-24">BIC</label>
+                            <InputText id="bic" name="bic" class="flex-auto" autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.bic?.invalid" severity="error" size="small" variant="simple">{{
+                            $form.bic.error?.message }}</Message>
                     </div>
-                    <div class="flex items-center gap-4 mb-8">
-                        <label for="amount" class="font-semibold w-24">Quantia</label>
-                        <InputText id="amount" name="amount" class="flex-auto" autocomplete="off" />€
+
+                    <div class="mb-8">
+                        <div class="flex items-center gap-4">
+                            <label for="amount" class="font-semibold w-24">Quantia</label>
+                            <InputText id="amount" name="amount" class="flex-auto" autocomplete="off" />€
+                        </div>
+                        <Message v-if="$form.amount?.invalid" severity="error" size="small" variant="simple">{{
+                            $form.amount.error?.message }}</Message>
                     </div>
-                    <Button type="submit" severity="secondary" label="Adicionar" />
+                    <Button type="submit" severity="success" label="Adicionar" />
                 </Form>
             </Dialog>
 
             <Dialog v-model:visible="editModalVisible" modal header="Editar transacção" :style="{ width: '30rem' }">
-                <Form v-slot="$form" :initialValues @submit="onFormSubmit">
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="name" class="font-semibold w-24">Nome</label>
-                        <InputText id="name" name="name" class="flex-auto" autocomplete="off" />
+                <Form v-slot="$form" :initialValues @submit="editTransaction" :resolver="transactionResolver">
+                    <div class="mb-8">
+                        <div class="flex items-center gap-4">
+                            <label for="name" class="font-semibold w-24">Nome</label>
+                            <InputText id="name" name="name" class="flex-auto" autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.name?.invalid" severity="error" size="small" variant="simple">{{
+                            $form.name.error?.message }}</Message>
                     </div>
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="iban" class="font-semibold w-24">IBAN</label>
-                        <InputText id="iban" name="iban" class="flex-auto" autocomplete="off" />
+
+                    <div class="mb-8">
+                        <div class="flex items-center gap-4">
+                            <label for="iban" class="font-semibold w-24">IBAN</label>
+                            <InputText id="iban" name="iban" class="flex-auto" autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.iban?.invalid" severity="error" size="small" variant="simple">{{
+                            $form.iban.error?.message }}</Message>
                     </div>
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="bic" class="font-semibold w-24">BIC</label>
-                        <InputText id="bic" name="bic" class="flex-auto" autocomplete="off" />
+
+                    <div class="mb-8">
+                        <div class="flex items-center gap-4">
+                            <label for="bic" class="font-semibold w-24">BIC</label>
+                            <InputText id="bic" name="bic" class="flex-auto" autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.bic?.invalid" severity="error" size="small" variant="simple">{{
+                            $form.bic.error?.message }}</Message>
                     </div>
-                    <div class="flex items-center gap-4 mb-8">
-                        <label for="amount" class="font-semibold w-24">Quantia</label>
-                        <InputText id="amount" name="amount" class="flex-auto" autocomplete="off" />€
+
+                    <div class="mb-8">
+                        <div class="flex items-center gap-4">
+                            <label for="amount" class="font-semibold w-24">Quantia</label>
+                            <InputText id="amount" name="amount" class="flex-auto" autocomplete="off" />€
+                        </div>
+                        <Message v-if="$form.amount?.invalid" severity="error" size="small" variant="simple">{{
+                            $form.amount.error?.message }}</Message>
                     </div>
                     <Button type="submit" severity="secondary" label="Guardar" />
                 </Form>
@@ -282,7 +464,7 @@ function recomputeHeaders() {
 
             <Dialog v-model:visible="editHeaderModalVisible" modal header="Editar cabeçalho"
                 :style="{ width: '30rem' }">
-                <Form v-slot="$form" :initial-values="header" @submit="editHeader">
+                <Form :initial-values="initialHeaderValues" @submit="editHeader">
                     <div class="flex items-center gap-4 mb-4">
                         <label for="initiating_party_name" class="font-semibold w-24">Ordenante</label>
                         <InputText id="initiating_party_name" name="initiating_party_name" class="flex-auto"
@@ -300,6 +482,5 @@ function recomputeHeaders() {
                 </Form>
             </Dialog>
         </div>
-
     </main>
 </template>

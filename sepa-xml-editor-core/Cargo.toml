@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1.0.94"
+chrono = "0.4.39"
 quick-xml = { version = "0.37.1", features = ["serde", "serialize"] }
 rust_decimal = { version = "1.36.0", features = ["serde-with-str"] }
 rust_decimal_macros = "1.36.0"
