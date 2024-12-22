@@ -6,6 +6,7 @@ import Card from 'primevue/card';
 import Dialog from 'primevue/dialog';
 import FileUpload, { type FileUploadUploaderEvent } from 'primevue/fileupload';
 import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
 
 import { Form, type FormSubmitEvent } from '@primevue/forms';
 
@@ -18,6 +19,8 @@ import { z } from 'zod';
 
 import { useToast } from 'primevue/usetoast';
 import Toast from 'primevue/toast';
+
+import * as ibantools from "ibantools";
 
 const toast = useToast();
 
@@ -257,6 +260,11 @@ function addTransaction(event: FormSubmitEvent) {
 }
 
 function editHeader(event: FormSubmitEvent) {
+    if (!event.valid) {
+        toast.add({ severity: "error", summary: 'Foram detetados erros na submissão. Por favor corrija e tente novamente.', life: 5000 });
+        return;
+    }
+
     const id = event.states.id.value
     const creation_date: string = event.states.creation_date.value
     const initiating_party_name = event.states.initiating_party_name.value
@@ -276,6 +284,8 @@ function editHeader(event: FormSubmitEvent) {
     recomputeHeaders();
 
     editHeaderModalVisible.value = false;
+
+    toast.add({ severity: "success", summary: 'Alterações efetuadas com sucesso!', life: 5000 });
 }
 
 function removeTransaction(i: number): void {
@@ -286,6 +296,8 @@ function removeTransaction(i: number): void {
     file.value.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf.splice(i, 1);
 
     recomputeHeaders();
+
+    toast.add({ severity: "success", summary: 'Transacção removida com sucesso.', life: 2000 });
 }
 
 function recomputeHeaders() {
@@ -306,13 +318,27 @@ function recomputeHeaders() {
     file.value.CstmrCdtTrfInitn.PmtInf.CtrlSum = controlSum;
 }
 
+const headerResolver = zodResolver(z.object(
+    {
+        initiating_party_name: z.string({ required_error: "Por favor introduza o nome." })
+            .min(1, "Por favor introduza o nome."),
+        id: z.string({ required_error: "Por favor introduza a identificação." })
+            .min(1, "Por favor introduza a identificação."),
+        creation_date: z.string({ required_error: "Por favor introduza a data." })
+            .datetime({ local: true, message: "Data inválida. Deve seguir o formato YYYY-MM-DDTHH:mm:ss (e.g. 2024-12-22T12:00:12)." },)
+    }
+))
+
 const transactionResolver = zodResolver(z.object(
     {
-        name: z.string({ required_error: "Por favor introduza um nome." }).min(1, "Por favor introduza um nome."),
-        iban: z.string({ required_error: "Por favor introduza o IBAN." }).min(1, "Por favor introduza o IBAN."),
-        bic: z.string({ required_error: "Por favor introduza o BIC." }).min(1, "Por favor introduza o BIC."),
-        amount: z.string({ required_error: "Por favor introduza uma quantia." }).regex(/^\d+\.\d{2}$/,
-            "A quantia deve ser indicada usando o ponto como separador decimal, contendo sempre duas casas decimais. Por exemplo, 1235.23 e 85.00 são considerados valores válidos."),
+        name: z.string({ required_error: "Por favor introduza o nome." })
+            .min(1, "Por favor introduza um nome."),
+        iban: z.string({ required_error: "Por favor introduza o IBAN destino." })
+            .refine((arg) => ibantools.isValidIBAN(arg), "IBAN inválido."),
+        bic: z.string({ required_error: "Por favor introduza o BIC da conta destino." })
+            .refine((arg) => ibantools.isValidBIC(arg), "BIC inválido."),
+        amount: z.string({ required_error: "Por favor introduza a quantia." })
+            .regex(/^\d+\.\d{2}$/, "Quantia inválida. A quantia deve ser indicada usando o ponto como separador decimal, contendo sempre duas casas decimais. Por exemplo, 1235.23 e 85.00 são considerados valores válidos."),
     }
 ))
 </script>
@@ -382,7 +408,7 @@ const transactionResolver = zodResolver(z.object(
 
             <Dialog v-model:visible="addModalVisible" modal header="Adicionar transacção" :style="{ width: '30rem' }">
                 <Form v-slot="$form" @submit="addTransaction" :resolver="transactionResolver">
-                    <div class="mb-8">
+                    <div class="mb-4">
                         <div class="flex items-center gap-4">
                             <label for="name" class="font-semibold w-24">Nome</label>
                             <InputText id="name" name="name" class="flex-auto" autocomplete="off" />
@@ -391,7 +417,7 @@ const transactionResolver = zodResolver(z.object(
                             $form.name.error?.message }}</Message>
                     </div>
 
-                    <div class="mb-8">
+                    <div class="mb-4">
                         <div class="flex items-center gap-4">
                             <label for="iban" class="font-semibold w-24">IBAN</label>
                             <InputText id="iban" name="iban" class="flex-auto" autocomplete="off" />
@@ -400,7 +426,7 @@ const transactionResolver = zodResolver(z.object(
                             $form.iban.error?.message }}</Message>
                     </div>
 
-                    <div class="mb-8">
+                    <div class="mb-4">
                         <div class="flex items-center gap-4">
                             <label for="bic" class="font-semibold w-24">BIC</label>
                             <InputText id="bic" name="bic" class="flex-auto" autocomplete="off" />
@@ -409,7 +435,7 @@ const transactionResolver = zodResolver(z.object(
                             $form.bic.error?.message }}</Message>
                     </div>
 
-                    <div class="mb-8">
+                    <div class="mb-4">
                         <div class="flex items-center gap-4">
                             <label for="amount" class="font-semibold w-24">Quantia</label>
                             <InputText id="amount" name="amount" class="flex-auto" autocomplete="off" />€
@@ -423,7 +449,7 @@ const transactionResolver = zodResolver(z.object(
 
             <Dialog v-model:visible="editModalVisible" modal header="Editar transacção" :style="{ width: '30rem' }">
                 <Form v-slot="$form" :initialValues @submit="editTransaction" :resolver="transactionResolver">
-                    <div class="mb-8">
+                    <div class="mb-4">
                         <div class="flex items-center gap-4">
                             <label for="name" class="font-semibold w-24">Nome</label>
                             <InputText id="name" name="name" class="flex-auto" autocomplete="off" />
@@ -432,7 +458,7 @@ const transactionResolver = zodResolver(z.object(
                             $form.name.error?.message }}</Message>
                     </div>
 
-                    <div class="mb-8">
+                    <div class="mb-4">
                         <div class="flex items-center gap-4">
                             <label for="iban" class="font-semibold w-24">IBAN</label>
                             <InputText id="iban" name="iban" class="flex-auto" autocomplete="off" />
@@ -441,7 +467,7 @@ const transactionResolver = zodResolver(z.object(
                             $form.iban.error?.message }}</Message>
                     </div>
 
-                    <div class="mb-8">
+                    <div class="mb-4">
                         <div class="flex items-center gap-4">
                             <label for="bic" class="font-semibold w-24">BIC</label>
                             <InputText id="bic" name="bic" class="flex-auto" autocomplete="off" />
@@ -450,7 +476,7 @@ const transactionResolver = zodResolver(z.object(
                             $form.bic.error?.message }}</Message>
                     </div>
 
-                    <div class="mb-8">
+                    <div class="mb-4">
                         <div class="flex items-center gap-4">
                             <label for="amount" class="font-semibold w-24">Quantia</label>
                             <InputText id="amount" name="amount" class="flex-auto" autocomplete="off" />€
@@ -464,19 +490,38 @@ const transactionResolver = zodResolver(z.object(
 
             <Dialog v-model:visible="editHeaderModalVisible" modal header="Editar cabeçalho"
                 :style="{ width: '30rem' }">
-                <Form :initial-values="initialHeaderValues" @submit="editHeader">
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="initiating_party_name" class="font-semibold w-24">Ordenante</label>
-                        <InputText id="initiating_party_name" name="initiating_party_name" class="flex-auto"
-                            autocomplete="off" />
+                <Form v-slot="$form" :initial-values="initialHeaderValues" :resolver="headerResolver"
+                    @submit="editHeader">
+                    <div class="mb-4">
+                        <div class="flex items-center gap-4">
+                            <label for="initiating_party_name" class="font-semibold w-24">Ordenante</label>
+                            <InputText id="initiating_party_name" name="initiating_party_name" class="flex-auto"
+                                autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.initiating_party_name?.invalid" severity="error" size="small"
+                            variant="simple">
+                            {{ $form.initiating_party_name.error?.message }}
+                        </Message>
                     </div>
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="id" class="font-semibold w-24">Identificação do pedido</label>
-                        <InputText id="id" name="id" class="flex-auto" autocomplete="off" />
+
+                    <div class="mb-4">
+                        <div class="flex items-center gap-4">
+                            <label for="id" class="font-semibold w-24">Identificação do pedido</label>
+                            <InputText id="id" name="id" class="flex-auto" autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.id?.invalid" severity="error" size="small" variant="simple">
+                            {{ $form.id.error?.message }}
+                        </Message>
                     </div>
-                    <div class="flex items-center gap-4 mb-4">
-                        <label for="creation_date" class="font-semibold w-24">Data de criação</label>
-                        <InputText id="creation_date" name="creation_date" class="flex-auto" autocomplete="off" />
+
+                    <div class="mb-4">
+                        <div class="flex items-center gap-4">
+                            <label for="creation_date" class="font-semibold w-24">Data de criação</label>
+                            <InputText id="creation_date" name="creation_date" class="flex-auto" autocomplete="off" />
+                        </div>
+                        <Message v-if="$form.creation_date?.invalid" severity="error" size="small" variant="simple">
+                            {{ $form.creation_date.error?.message }}
+                        </Message>
                     </div>
                     <Button type="submit" severity="secondary" label="Guardar" />
                 </Form>
