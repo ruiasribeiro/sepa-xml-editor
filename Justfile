@@ -12,6 +12,10 @@ build: setup
     cp -r "{{core-project}}/pkg" "{{spa-project}}/external/{{core-project}}"
     cd {{spa-project}}; npm run build
 
+deploy: build
+    rm -rf docs/
+    cp -r {{spa-project}}/dist docs
+
 # format:
 #     cargo fmt
 
