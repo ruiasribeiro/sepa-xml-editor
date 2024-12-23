@@ -350,11 +350,11 @@ const transactionResolver = zodResolver(z.object(
             <h1 class="font-bold text-lg">Editor de Ficheiros SEPA XML</h1>
 
             <div v-if="file !== null" class="flex gap-4">
+                <form class="row" @submit.prevent="clearFile">
+                    <Button type="submit" severity="secondary" variant="outlined" >Limpar</Button>
+                </form>
                 <form class="row" @submit.prevent="saveFile">
                     <Button type="submit">Guardar</Button>
-                </form>
-                <form class="row" @submit.prevent="clearFile">
-                    <Button type="submit">Limpar</Button>
                 </form>
             </div>
             <FileUpload v-else mode="basic" name="demo[]" accept="text/xml" :maxFileSize="1000000" @uploader="onUpload"
@@ -373,7 +373,7 @@ const transactionResolver = zodResolver(z.object(
                     <div>{{ file?.CstmrCdtTrfInitn.GrpHdr.NbOfTxs }} transações</div>
                     <div>{{ file?.CstmrCdtTrfInitn.GrpHdr.CtrlSum }}€ no total</div>
 
-                    <Button class="mt-2" @click="editHeaderModalVisible = true">
+                    <Button class="mt-2" severity="secondary" variant="outlined" @click="editHeaderModalVisible = true">
                         <i class="pi pi-file-edit" style="font-size: 0.75rem"></i>Editar
                     </Button>
                 </template>
@@ -392,10 +392,10 @@ const transactionResolver = zodResolver(z.object(
                     </div>
 
                     <div class="flex gap-4 mt-2 justify-end">
-                        <Button class="mt-2" @click="() => { editModalVisible = true; transactionToEdit = i }">
+                        <Button class="mt-2" severity="secondary" variant="outlined" @click="() => { editModalVisible = true; transactionToEdit = i }">
                             <i class="pi pi-file-edit" style="font-size: 0.75rem"></i>Editar
                         </Button>
-                        <Button class="mt-2" @click="() => removeTransaction(i)">
+                        <Button class="mt-2" severity="secondary" variant="outlined" @click="() => removeTransaction(i)">
                             <i class="pi pi-trash" style="font-size: 0.75rem"></i>Remover
                         </Button>
                     </div>
@@ -443,7 +443,7 @@ const transactionResolver = zodResolver(z.object(
                         <Message v-if="$form.amount?.invalid" severity="error" size="small" variant="simple">{{
                             $form.amount.error?.message }}</Message>
                     </div>
-                    <Button type="submit" severity="success" label="Adicionar" />
+                    <Button type="submit" severity="secondary" variant="outlined" label="Adicionar" />
                 </Form>
             </Dialog>
 
@@ -484,7 +484,7 @@ const transactionResolver = zodResolver(z.object(
                         <Message v-if="$form.amount?.invalid" severity="error" size="small" variant="simple">{{
                             $form.amount.error?.message }}</Message>
                     </div>
-                    <Button type="submit" severity="secondary" label="Guardar" />
+                    <Button type="submit" severity="secondary" variant="outlined" label="Guardar" />
                 </Form>
             </Dialog>
 
@@ -523,7 +523,7 @@ const transactionResolver = zodResolver(z.object(
                             {{ $form.creation_date.error?.message }}
                         </Message>
                     </div>
-                    <Button type="submit" severity="secondary" label="Guardar" />
+                    <Button type="submit" severity="secondary" variant="outlined" label="Guardar" />
                 </Form>
             </Dialog>
         </div>
