@@ -14,7 +14,7 @@ pub fn write_xml(document: wasm_bindgen::JsValue) -> Result<String, wasm_bindgen
     let document: Document = serde_wasm_bindgen::from_value(document)?;
 
     let mut buffer = Vec::new();
-    let mut writer = quick_xml::Writer::new_with_indent(&mut buffer, b' ', 4);
+    let mut writer = quick_xml::Writer::new(&mut buffer);
 
     writer.write_serializable("Document", &document)?;
 
