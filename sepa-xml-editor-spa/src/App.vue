@@ -351,7 +351,7 @@ const transactionResolver = zodResolver(z.object(
 
             <div v-if="file !== null" class="flex gap-4">
                 <form class="row" @submit.prevent="clearFile">
-                    <Button type="submit" severity="secondary" variant="outlined" >Limpar</Button>
+                    <Button type="submit" severity="danger" variant="outlined">Limpar</Button>
                 </form>
                 <form class="row" @submit.prevent="saveFile">
                     <Button type="submit">Guardar</Button>
@@ -382,22 +382,28 @@ const transactionResolver = zodResolver(z.object(
             <Card v-for="(transaction, i) in file.CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf"
                 :key="transaction.CdtrAcct.Id.IBAN" class="my-4">
                 <template #content>
-                    <div class="flex justify-between text-lg">
-                        <div>{{ transaction.Cdtr.Nm }}</div>
-                        <div>{{ transaction.Amt.InstdAmt.$value }}€</div>
-                    </div>
-                    <div class="flex justify-between text-sm">
-                        <div>{{ transaction.CdtrAcct.Id.IBAN }}</div>
-                        <div>{{ transaction.CdtrAgt.FinInstnId.BIC }}</div>
-                    </div>
+                    <div class="flex justify-between">
+                        <div>
+                            <div class="text-lg">{{ transaction.Cdtr.Nm }}</div>
+                            <div>{{ transaction.CdtrAcct.Id.IBAN }}</div>
+                        </div>
+                        <div class="flex justify-end align-middle text-right">
+                            <div class="mr-6">
+                                <div class="text-lg">{{ transaction.Amt.InstdAmt.$value }}€</div>
+                                <div>{{ transaction.CdtrAgt.FinInstnId.BIC }}</div>
+                            </div>
+                            <div class="my-auto">
+                                <Button class="mx-1" severity="secondary" variant="outlined"
+                                    @click="() => { editModalVisible = true; transactionToEdit = i }">
+                                    <i class="pi pi-file-edit" style="font-size: 1rem"></i>
+                                </Button>
+                                <Button class="mx-1" severity="danger" variant="outlined"
+                                    @click="() => removeTransaction(i)">
+                                    <i class="pi pi-trash" style="font-size: 1rem"></i>
+                                </Button>
+                            </div>
+                        </div>
 
-                    <div class="flex gap-4 mt-2 justify-end">
-                        <Button class="mt-2" severity="secondary" variant="outlined" @click="() => { editModalVisible = true; transactionToEdit = i }">
-                            <i class="pi pi-file-edit" style="font-size: 0.75rem"></i>Editar
-                        </Button>
-                        <Button class="mt-2" severity="secondary" variant="outlined" @click="() => removeTransaction(i)">
-                            <i class="pi pi-trash" style="font-size: 0.75rem"></i>Remover
-                        </Button>
                     </div>
                 </template>
             </Card>
